@@ -35,6 +35,7 @@ void networkSx::on_transfer( const name from, const name to, const asset quantit
     extended_asset best_rate;
     for ( const auto registry : _registry ) {
         if ( !registry.tokens.count( symcode ) ) continue;
+        if ( !registry.tokens.count( out_symcode ) ) continue;
         const asset rate = swapSx::get_rate( registry.contract, quantity, out_symcode );
         const name token_contract = swapSx::get_contract( registry.contract, out_symcode );
         const asset balance = eosio::token::get_balance( token_contract, registry.contract, out_symcode );
@@ -48,7 +49,7 @@ void networkSx::on_transfer( const name from, const name to, const asset quantit
             best_rate = extended_asset{ rate, token_contract };
         }
     }
-    check( best_contract.value, "network cannot match " + symcode.to_string() + "/" + out_symcode.to_string() );
+    check( best_contract.value, "network cannot match from `" + symcode.to_string() + "` to `" + out_symcode.to_string() + "`");
 
     // convert & send funds back to user
     self_transfer( best_contract, extended_asset{ quantity, contract }, out_symcode.to_string() );
