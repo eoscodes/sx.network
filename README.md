@@ -1,6 +1,6 @@
 # `network.sx`
 
-> SX Network
+> SX Network - Liquidity pool aggregator 
 
 ## Quickstart
 
