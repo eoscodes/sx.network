@@ -30,12 +30,13 @@ void networkSx::on_transfer( const name from, const name to, const asset quantit
     // calculate best rates
     name best_contract;
     asset best_rate;
+    asset fee;
     name token_contract;
 
     for ( const auto registry : _registry ) {
         if ( !registry.tokens.count( symcode ) ) continue;
         if ( !registry.tokens.count( out_symcode ) ) continue;
-        swapSx::tokens _tokens( "registry.sx"_n, "registry.sx"_n.value );
+        swapSx::settings _settings( registry.contract, registry.contract.value );
 
         token_contract = get_contract( registry.contract, out_symcode );
         const asset rate = swapSx::get_amount_out( registry.contract, quantity, out_symcode );
@@ -48,6 +49,7 @@ void networkSx::on_transfer( const name from, const name to, const asset quantit
         if ( rate.amount > best_rate.amount ) {
             best_contract = registry.contract;
             best_rate = rate;
+            fee = rate * _settings.get().fee / 10000;
         }
     }
     check( best_contract.value, "network cannot match from `" + symcode.to_string() + "` to `" + out_symcode.to_string() + "`");
@@ -55,6 +57,9 @@ void networkSx::on_transfer( const name from, const name to, const asset quantit
     // convert & send funds back to user
     self_transfer( best_contract, contract, quantity, out_symcode.to_string() );
     self_transfer( from, token_contract, best_rate, "convert" );
+
+    swapSx::swaplog_action swaplog( best_contract, { best_contract, "active"_n });
+    swaplog.send( from, quantity, best_rate, fee );
 }
 
 name networkSx::get_contract( const name contract, const symbol_code symcode )
