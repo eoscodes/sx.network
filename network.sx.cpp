@@ -49,7 +49,7 @@ void networkSx::on_transfer( const name from, const name to, const asset quantit
         if ( rate.amount > best_rate.amount ) {
             best_contract = registry.contract;
             best_rate = rate;
-            fee = rate * _settings.get().fee / 10000;
+            fee = quantity * _settings.get().fee / 10000;
         }
     }
     check( best_contract.value, "network cannot match from `" + symcode.to_string() + "` to `" + out_symcode.to_string() + "`");
@@ -58,7 +58,7 @@ void networkSx::on_transfer( const name from, const name to, const asset quantit
     self_transfer( best_contract, contract, quantity, out_symcode.to_string() );
     self_transfer( from, token_contract, best_rate, "convert" );
 
-    swapSx::swaplog_action swaplog( best_contract, { best_contract, "active"_n });
+    swapSx::swaplog_action swaplog( best_contract, { get_self(), "active"_n });
     swaplog.send( from, quantity, best_rate, fee );
 }
 
