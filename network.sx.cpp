@@ -1,7 +1,6 @@
 #include <eosio.token/eosio.token.hpp>
-#include <sx.uniswap/uniswap.hpp>
 #include <sx.swap/swap.sx.hpp>
-#include <sx.registry/registry.sx.hpp>
+#include <sx.stats/stats.sx.hpp>
 
 #include "network.sx.hpp"
 
@@ -15,57 +14,56 @@ void networkSx::on_transfer( const name from, const name to, const asset quantit
     const set<name> ignore = set<name>{ "eosio.ram"_n };
     if ( ignore.find( from ) != ignore.end() ) return;
 
+    // SX swap contracts
+    const set<name> swap_contracts = {"stable.sx"_n, "swap.sx"_n};
+
     // ignore incoming registry.sx accounts
-    sx::registry::swap_table _registry( "registry.sx"_n, "registry.sx"_n.value );
-    if ( _registry.find( from.value ) != _registry.end() ) return;
+    if ( swap_contracts.find( from ) != swap_contracts.end() ) return;
 
     // ignore transfers
     if ( to != get_self() || memo == get_self().to_string() ) return;
 
     // user input validation
     const name contract = get_first_receiver();
-    const symbol_code symcode = quantity.symbol.code();
+    const symbol_code in_symcode = quantity.symbol.code();
     const symbol_code out_symcode = parse_memo_symcode( memo );
 
-    // calculate best rates
+    // find best rates
     name best_contract;
     asset best_rate;
     asset fee;
     name token_contract;
 
-    for ( const auto registry : _registry ) {
-        if ( !registry.tokens.count( symcode ) ) continue;
-        if ( !registry.tokens.count( out_symcode ) ) continue;
-        swapSx::settings _settings( registry.contract, registry.contract.value );
+    for ( const name swap_contract : swap_contracts ) {
+        sx::swap::settings _settings( swap_contract, swap_contract.value );
+        sx::swap::tokens _tokens( swap_contract, swap_contract.value );
 
-        token_contract = get_contract( registry.contract, out_symcode );
-        const asset rate = swapSx::get_amount_out( registry.contract, quantity, out_symcode );
-        const asset balance = eosio::token::get_balance( token_contract, registry.contract, out_symcode );
+        if ( _tokens.find( in_symcode.raw() ) == _tokens.end() ) continue;
+        if ( _tokens.find( out_symcode.raw() ) == _tokens.end() ) continue;
+
+        token_contract = _tokens.get( out_symcode.raw() ).contract;
+        const asset rate = sx::swap::get_amount_out( swap_contract, quantity, out_symcode );
+        const asset balance = eosio::token::get_balance( token_contract, swap_contract, out_symcode );
 
         // insufficient balance
         if ( balance < rate ) continue;
 
         // update with best rate
         if ( rate.amount > best_rate.amount ) {
-            best_contract = registry.contract;
+            best_contract = swap_contract;
             best_rate = rate;
             fee = quantity * _settings.get().fee / 10000;
         }
     }
-    check( best_contract.value, "network cannot match from `" + symcode.to_string() + "` to `" + out_symcode.to_string() + "`");
+    check( best_contract.value, "network cannot match from `" + in_symcode.to_string() + "` to `" + out_symcode.to_string() + "`");
 
     // convert & send funds back to user
     self_transfer( best_contract, contract, quantity, out_symcode.to_string() );
     self_transfer( from, token_contract, best_rate, "convert" );
 
-    swapSx::swaplog_action swaplog( best_contract, { get_self(), "active"_n });
-    swaplog.send( from, quantity, best_rate, fee );
-}
-
-name networkSx::get_contract( const name contract, const symbol_code symcode )
-{
-    swapSx::tokens _tokens( contract, contract.value );
-    return _tokens.get( symcode.raw(), "symcode does not exists").contract;
+    // push log
+    sx::stats::swaplog_action swaplog( "stats.sx"_n, { get_self(), "active"_n });
+    swaplog.send( best_contract, from, quantity, best_rate, fee );
 }
 
 void networkSx::self_transfer( const name to, const name contract, const asset quantity, const string memo )
